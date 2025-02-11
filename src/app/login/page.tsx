@@ -1,9 +1,9 @@
-import SignInForm from "../ui/sign-in/sign-in-form";
+import LoginForm from "../ui/login-form";
 
 export default function Home() {
   return (
     <main>
-      <SignInForm />
+      <LoginForm />
     </main>
   );
 }

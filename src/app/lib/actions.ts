@@ -3,10 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { SignInFormSchema, SignInFormState } from "./definitions";
+import { LoginFormState } from "./definitions";
+import { z } from "zod";
 
-export async function signIn(prevState: SignInFormState, formData: FormData) {
-  const validatedFields = SignInFormSchema.safeParse({
+const LoginFormSchema = z.object({
+  email: z.string().email({ message: "Please enter a valid email." }).trim(),
+  password: z
+    .string()
+    .min(8, { message: "Be at least 8 characters long" })
+    .regex(/[a-zA-Z]/, { message: "Contain at least one letter." })
+    .regex(/[0-9]/, { message: "Contain at least one number." })
+    .regex(/[^a-zA-Z0-9]/, {
+      message: "Contain at least one special character.",
+    })
+    .trim(),
+});
+
+export async function signIn(prevState: LoginFormState, formData: FormData) {
+  const validatedFields = LoginFormSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
   });
@@ -53,79 +67,80 @@ export async function signIn(prevState: SignInFormState, formData: FormData) {
   redirect("/dashboard");
 }
 
-export async function editCookie() {
-  console.log("getting cookies");
+export async function fetchWithAuth(
+  endpoint: string,
+  options: RequestInit = {}
+) {
+  console.log(`Fetching: ${endpoint}`);
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get("accessToken")?.value;
+  let accessToken = cookieStore.get("accessToken")?.value;
   const refreshToken = cookieStore.get("refreshToken")?.value;
 
-  try {
-    console.log("fetch waffle 1st try");
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/waffles`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    const data = await response.json();
-    if (
-      !response.ok &&
-      data.message !== "Unauthorized" &&
-      data.statusCode !== 401
-    ) {
-      console.log(
-        "Nest said im authorized but it gave me bad res, maybe i req bad?"
+  const fetchData = async (token: string) => {
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}${endpoint}`,
+        {
+          ...options,
+          headers: {
+            ...options.headers,
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
       );
-      return data;
-    }
 
-    if (response.ok) {
-      console.log("Success get waffle first try!");
-      return data;
-    }
-  } catch (error) {
-    console.log("First try to get waffle fail, cannot connect to nest");
-    return `Error: Unable to connect to server. ${error}`;
-  }
+      const data = await response.json();
+      if (response.ok) return data;
 
-  let newTokens;
+      if (response.status === 401 || data.message === "Unauthorized") {
+        console.log("Token expired, attempting refresh...");
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      return `Error: Unable to connect to server. ${error}`;
+    }
+  };
+
+  const data = await fetchData(accessToken!);
+  if (data !== null) return data;
+
   try {
-    console.log("Trying to use refresh tokens");
+    console.log("Refreshing tokens...");
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/authentication/refresh-tokens`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
       }
     );
-    const data = await response.json();
+    if (response.ok) {
+      const newTokens: { accessToken: string; refreshToken: string } =
+        await response.json();
+      cookieStore.set("accessToken", newTokens.accessToken);
+      cookieStore.set("refreshToken", newTokens.refreshToken);
+      accessToken = newTokens.accessToken;
 
-    if (!response.ok) {
-      console.log("My refresh token did not work, Stolen? Expired?");
-      return data;
+      return await fetchData(accessToken);
     }
-    newTokens = data;
-    cookieStore.set("accessToken", data.accessToken);
-    cookieStore.set("refreshToken", data.refreshToken);
   } catch (error) {
-    return `Error: Unable to connect to server. ${error}`;
+    return `Error: Unable to refresh token. ${error}`;
   }
 
-  console.log(`old access token ${accessToken}`);
-  console.log(`new access token ${newTokens.accessToken}`);
-  try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/waffles`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${newTokens.accessToken}`,
-      },
-    });
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    return `Error: Unable to connect to server. ${error}`;
-  }
+  console.log("Refresh failed, returning error...");
+  cookieStore.delete("accessToken");
+  cookieStore.delete("refreshToken");
+  revalidatePath("/login");
+  redirect("/login");
+}
+
+export async function signOut() {
+  const cookieStore = await cookies();
+  cookieStore.delete("accessToken");
+  cookieStore.delete("refreshToken");
+  revalidatePath("/login");
+  redirect("/login");
 }

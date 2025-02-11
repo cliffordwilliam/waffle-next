@@ -3,7 +3,7 @@ import { signIn } from "@/app/lib/actions";
 import { Alert, Box, Button, Card, Container, TextField } from "@mui/material";
 import { useActionState } from "react";
 
-export default function SignInForm() {
+export default function LoginForm() {
   const [state, action, pending] = useActionState(signIn, undefined);
 
   return (
