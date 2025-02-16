@@ -13,5 +13,5 @@ export default function Home() {
     getData();
   }, []);
 
-  return <>{JSON.stringify(res)}</>;
+  return JSON.stringify(res);
 }

@@ -26,7 +26,6 @@ export async function signIn(prevState: LoginFormState, formData: FormData) {
   });
 
   if (!validatedFields.success) {
-    // To render form input err msg
     return {
       errors: validatedFields.error.flatten().fieldErrors,
     };
@@ -48,18 +47,17 @@ export async function signIn(prevState: LoginFormState, formData: FormData) {
     const data = await response.json();
 
     if (!response.ok) {
-      // To render nest err
+      // All not ok nest res have message
       return {
         message: data.message as string,
       };
     }
 
-    // Save to cookies
     const cookieStore = await cookies();
     cookieStore.set("accessToken", data.accessToken);
     cookieStore.set("refreshToken", data.refreshToken);
   } catch (error) {
-    // To render cannot connect ot nest err
+    // Cannot connect to nest err
     return { message: `Error: Unable to connect to server. ${error}` };
   }
 
@@ -71,7 +69,6 @@ export async function fetchWithAuth(
   endpoint: string,
   options: RequestInit = {}
 ) {
-  console.log(`Fetching: ${endpoint}`);
   const cookieStore = await cookies();
   let accessToken = cookieStore.get("accessToken")?.value;
   const refreshToken = cookieStore.get("refreshToken")?.value;
@@ -91,10 +88,8 @@ export async function fetchWithAuth(
       );
 
       const data = await response.json();
-      if (response.ok) return data;
 
       if (response.status === 401 || data.message === "Unauthorized") {
-        console.log("Token expired, attempting refresh...");
         return null;
       }
 
@@ -108,7 +103,6 @@ export async function fetchWithAuth(
   if (data !== null) return data;
 
   try {
-    console.log("Refreshing tokens...");
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL}/authentication/refresh-tokens`,
       {
@@ -130,7 +124,6 @@ export async function fetchWithAuth(
     return `Error: Unable to refresh token. ${error}`;
   }
 
-  console.log("Refresh failed, returning error...");
   cookieStore.delete("accessToken");
   cookieStore.delete("refreshToken");
   revalidatePath("/login");
